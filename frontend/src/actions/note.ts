@@ -18,7 +18,7 @@ export async function createNote(subjectId: string) {
       subjectId,
       userId: session.user.id,
     });
-    
+
     // Return the ID to redirect in client
     return { success: true, noteId: note._id.toString() };
   } catch (e) {
@@ -26,7 +26,7 @@ export async function createNote(subjectId: string) {
   }
 }
 
-export async function updateNote(noteId: string, data: { title?: string; content?: string }) {
+export async function updateNote(noteId: string, data: { title?: string; content?: string; isBookmarked?: boolean; tags?: string[] }) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
 
@@ -34,9 +34,9 @@ export async function updateNote(noteId: string, data: { title?: string; content
 
   try {
     await Note.findByIdAndUpdate(
-        noteId, 
-        { ...data },
-        { new: true }
+      noteId,
+      { ...data },
+      { new: true }
     );
     revalidatePath(`/dashboard/notes/${noteId}`);
     return { success: true };
@@ -46,16 +46,16 @@ export async function updateNote(noteId: string, data: { title?: string; content
 }
 
 export async function deleteNote(noteId: string, subjectId: string) {
-    const session = await auth();
-    if (!session?.user?.id) return { error: "Unauthorized" };
-  
-    await connectDB();
-  
-    try {
-      await Note.findByIdAndDelete(noteId);
-      revalidatePath(`/dashboard/subjects/${subjectId}`);
-      return { success: true };
-    } catch (e) {
-      return { error: "Failed to delete note" };
-    }
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Unauthorized" };
+
+  await connectDB();
+
+  try {
+    await Note.findByIdAndDelete(noteId);
+    revalidatePath(`/dashboard/subjects/${subjectId}`);
+    return { success: true };
+  } catch (e) {
+    return { error: "Failed to delete note" };
+  }
 }

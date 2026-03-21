@@ -14,6 +14,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Link from "next/link";
+import { Github, Loader2, Sparkles, UserPlus } from "lucide-react";
+import { motion } from "framer-motion";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -51,62 +53,105 @@ export default function RegisterPage() {
   };
 
   return (
-    <Card className="w-[350px]">
-      <CardHeader>
-        <CardTitle>Register</CardTitle>
-        <CardDescription>
-          Create a new account to get started.
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent>
-          <div className="grid w-full items-center gap-4">
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="w-full max-w-md"
+    >
+      <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-white/80 backdrop-blur-xl ring-1 ring-slate-100">
+        <CardHeader className="space-y-4 pt-10 pb-6 text-center">
+          <div className="flex justify-center flex-col items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-2xl text-white shadow-indigo-200 shadow-xl mb-4 group-hover:scale-110 transition-transform">
+              <UserPlus size={24} />
             </div>
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            <CardTitle className="text-3xl font-black text-slate-900 tracking-tight">Create Account</CardTitle>
+            <CardDescription className="text-slate-500 max-w-xs mx-auto">
+              Take the first step towards a smarter, more organized study life.
+            </CardDescription>
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-2">
-          <Button className="w-full" type="submit" disabled={loading}>
-            {loading ? "Creating Account..." : "Register"}
-          </Button>
-          <p className="text-xs text-center text-muted-foreground">
-            Already have an account?{" "}
-            <Link href="/login" className="text-primary hover:underline">
-              Login
-            </Link>
-          </p>
-        </CardFooter>
-      </form>
-    </Card>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  placeholder="John Doe"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="rounded-xl h-12 bg-slate-50 border-slate-100 focus-visible:ring-indigo-600"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="rounded-xl h-12 bg-slate-50 border-slate-100 focus-visible:ring-indigo-600"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Create a strong password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="rounded-xl h-12 bg-slate-50 border-slate-100 focus-visible:ring-indigo-600"
+                  required
+                />
+              </div>
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-xs font-bold text-red-500 bg-red-50 p-3 rounded-lg border border-red-100"
+                >
+                  {error}
+                </motion.p>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-6 pb-10">
+            <Button className="w-full h-12 rounded-xl text-base font-bold shadow-lg shadow-indigo-100 bg-indigo-600 hover:bg-indigo-700 transition-all active:scale-[0.98]" type="submit" disabled={loading}>
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Creating Account...
+                </div>
+              ) : "Create Free Account"}
+            </Button>
+
+            <div className="relative w-full">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-100" /></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400 font-bold tracking-widest">Or continue with</span></div>
+            </div>
+
+            <div className="grid grid-cols-1 w-full gap-4">
+              <Button variant="outline" className="h-12 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-bold flex items-center justify-center gap-3">
+                <img src="https://www.google.com/favicon.ico" className="w-4 h-4 grayscale group-hover:grayscale-0" alt="Google" />
+                Google Account
+              </Button>
+            </div>
+
+            <p className="text-sm text-center text-slate-500">
+              Already have an account?{" "}
+              <Link href="/login" className="text-indigo-600 font-bold hover:underline">
+                Sign In
+              </Link>
+            </p>
+          </CardFooter>
+        </form>
+      </Card>
+      <div className="mt-8 text-center text-xs text-slate-400 font-medium">
+        By joining EduPlus, you agree to our Terms of Service and Privacy Policy.
+      </div>
+    </motion.div>
   );
 }

@@ -9,9 +9,9 @@ export async function summarizeText(text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: plainText, sentences_count: 5 }),
     });
-    
+
     if (!response.ok) {
-        throw new Error("AI Service error");
+      throw new Error("AI Service error");
     }
 
     const data = await response.json();
@@ -31,9 +31,9 @@ export async function generateQuiz(text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: plainText }),
     });
-    
+
     if (!response.ok) {
-        throw new Error("AI Service error");
+      throw new Error("AI Service error");
     }
 
     const data = await response.json();
@@ -41,5 +41,22 @@ export async function generateQuiz(text: string) {
   } catch (e) {
     console.error(e);
     return { error: "AI Service unavailable." };
+  }
+}
+export async function getRecommendations(text: string) {
+  if (!text) return { error: "No text provided" };
+
+  try {
+    const res = await fetch("http://localhost:8000/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!res.ok) throw new Error("Failed to get recommendations");
+    return res.json();
+  } catch (e) {
+    console.error(e);
+    return { error: "AI Service error" };
   }
 }

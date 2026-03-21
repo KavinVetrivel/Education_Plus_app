@@ -1,5 +1,7 @@
 # Education Plus
 
+### This is an End to End Vibe Coded Project for My School Assignment.
+
 A comprehensive educational platform built with Next.js 16 (Frontend) and Python FastAPI (AI Service).
 
 ## Setup Instructions

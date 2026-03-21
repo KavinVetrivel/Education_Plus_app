@@ -3,11 +3,8 @@ import connectDB from "@/lib/db";
 import Note from "@/models/Note";
 import { Editor } from "@/components/editor/editor";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { ChevronLeft } from "lucide-react";
 
-export default async function NotePage({ params }: { params: { noteId: string } }) {
+export default async function NotePage({ params }: { params: Promise<{ noteId: string }> }) {
   const session = await auth();
   if (!session) redirect("/login");
 
@@ -17,27 +14,26 @@ export default async function NotePage({ params }: { params: { noteId: string } 
   const note = await Note.findOne({ _id: noteId, userId: session.user.id }).lean();
 
   if (!note) {
-    return <div>Note not found</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Oops! Note not found.</h1>
+        <p className="text-slate-500 font-medium italic">"Maybe it was never written, or successfully forgotten."</p>
+      </div>
+    );
   }
 
-  // Serialize
-  const serializedNote = {
+  // Serialize with proper types for Client Component
+  const serializedNote: any = {
     ...note,
-    _id: note._id.toString(),
-    subjectId: note.subjectId.toString(),
-    userId: note.userId.toString(),
-    createdAt: note.createdAt?.toISOString(),
-    updatedAt: note.updatedAt?.toISOString(),
+    _id: (note as any)._id?.toString(),
+    subjectId: (note as any).subjectId?.toString(),
+    userId: (note as any).userId?.toString(),
+    createdAt: (note as any).createdAt?.toISOString(),
+    updatedAt: (note as any).updatedAt?.toISOString(),
   };
 
   return (
-    <div className="p-8 bg-slate-50 min-h-screen">
-      <Link href={`/dashboard/subjects/${serializedNote.subjectId}`}>
-        <Button variant="ghost" className="mb-4 pl-0 hover:pl-0 hover:bg-transparent text-muted-foreground">
-            <ChevronLeft className="mr-2 h-4 w-4" /> Back to Notes
-        </Button>
-      </Link>
-      
+    <div className="min-h-screen">
       <Editor note={serializedNote} />
     </div>
   );
