@@ -38,31 +38,41 @@ export function Recorder({ onTranscription }: RecorderProps) {
             console.log("🔌 Attempting to connect WebSocket to:", wsUrl);
             ws.current = new WebSocket(wsUrl);
             
+            // Set binary type to handle audio data
+            ws.current.binaryType = "arraybuffer";
+            
             ws.current.onopen = () => {
                 console.log("✅ WebSocket connected successfully");
+                console.log("🔗 WebSocket state:", ws.current?.readyState);
             };
 
             ws.current.onmessage = (event) => {
-                console.log("📨 WebSocket onmessage triggered with raw data:", event.data);
-                
-                // Clear any pending transcription timeout
-                if ((ws.current as any).transcriptionTimeout) {
-                    clearTimeout((ws.current as any).transcriptionTimeout);
-                    (ws.current as any).transcriptionTimeout = null;
-                }
+                console.log("📨 WebSocket onmessage triggered");
+                console.log("📨 Event type:", typeof event.data);
+                console.log("📨 Raw event data:", event.data);
                 
                 try {
-                    const data = JSON.parse(event.data);
+                    // Make sure data is a string
+                    let dataStr = event.data;
+                    if (typeof event.data !== 'string') {
+                        dataStr = new TextDecoder().decode(event.data);
+                    }
+                    
+                    console.log("🔄 Attempting to parse:", dataStr);
+                    const data = JSON.parse(dataStr);
                     console.log("✅ Parsed JSON from WebSocket:", data);
                     
-                    if (data.text) {
+                    if (data.text !== undefined && data.text !== null) {
                         console.log("📝 Found text in message:", data.text);
                         console.log("🔄 About to call onTranscription callback");
+                        console.log("📊 Callback function:", typeof onTranscription);
+                        
                         onTranscription(data.text, data.complete || false);
                         console.log("✅ onTranscription callback called successfully");
                         
                         // If transcription is complete, reset isTranscribing state
                         if (data.complete) {
+                            console.log("⏸️  Setting isTranscribing to false");
                             setIsTranscribing(false);
                             console.log("✅ Transcription complete, state reset");
                         }
@@ -71,17 +81,21 @@ export function Recorder({ onTranscription }: RecorderProps) {
                     }
                 } catch (err) {
                     console.error("❌ Error parsing WebSocket message:", err);
+                    console.error("Raw event data type:", typeof event.data);
                     console.error("Raw event data:", event.data);
                 }
             };
 
             ws.current.onerror = (error) => {
-                console.error("❌ WebSocket error:", error);
+                console.error("❌ WebSocket error event:", error);
+                console.error("❌ WebSocket readyState:", ws.current?.readyState);
                 setIsTranscribing(false);
             };
 
-            ws.current.onclose = () => {
-                console.log("🔌 WebSocket disconnected");
+            ws.current.onclose = (event) => {
+                console.log("🔌 WebSocket closed");
+                console.log("🔌 Close code:", event.code);
+                console.log("🔌 Close reason:", event.reason);
             };
         } catch (err) {
             console.error("❌ Failed to create WebSocket:", err);

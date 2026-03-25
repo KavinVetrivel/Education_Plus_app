@@ -235,17 +235,21 @@ async def websocket_transcribe(websocket: WebSocket):
     session = TranscriptionSession()
     
     print("🔗 WebSocket connection established")
+    print(f"🔗 Connection state: {websocket.client_state}")
     
     try:
         while True:
             # Receive data from client
             data = await websocket.receive()
+            print(f"📥 Received data type: {type(data)}, keys: {data.keys() if isinstance(data, dict) else 'N/A'}")
             
             if "text" in data:
                 # Text message (control messages)
                 try:
                     message = json.loads(data["text"])
-                except:
+                    print(f"📥 Parsed text message: {message}")
+                except Exception as e:
+                    print(f"❌ Failed to parse text message: {e}")
                     continue
                 
                 if message.get("type") == "end_stream":
@@ -261,9 +265,20 @@ async def websocket_transcribe(websocket: WebSocket):
                         "text": delta_text,
                         "complete": True,
                     }
-                    print(f"📤 Sending WebSocket response: {response}")
-                    await websocket.send_json(response)
-                    await asyncio.sleep(0.1)  # Small delay to ensure message is sent
+                    print(f"📤 Preparing to send WebSocket response: {response}")
+                    try:
+                        await websocket.send_json(response)
+                        print(f"✅ Successfully sent response via send_json")
+                    except Exception as e:
+                        print(f"❌ Error sending via send_json: {e}")
+                        # Try alternative method
+                        try:
+                            await websocket.send_text(json.dumps(response))
+                            print(f"✅ Successfully sent response via send_text")
+                        except Exception as e2:
+                            print(f"❌ Error sending via send_text: {e2}")
+                    
+                    await asyncio.sleep(0.2)  # Ensure message is flushed
                     print(f"✅ Sent final transcription: {delta_text}")
                     
                     # Reset for next recording session
@@ -290,8 +305,18 @@ async def websocket_transcribe(websocket: WebSocket):
                             "text": delta_text,
                             "complete": False,
                         }
-                        print(f"📤 Sending partial WebSocket response: {response}")
-                        await websocket.send_json(response)
+                        print(f"📤 Preparing to send partial WebSocket response: {response}")
+                        try:
+                            await websocket.send_json(response)
+                            print(f"✅ Successfully sent partial response via send_json")
+                        except Exception as e:
+                            print(f"❌ Error sending partial via send_json: {e}")
+                            # Try alternative method
+                            try:
+                                await websocket.send_text(json.dumps(response))
+                                print(f"✅ Successfully sent partial response via send_text")
+                            except Exception as e2:
+                                print(f"❌ Error sending partial via send_text: {e2}")
                         print(f"📤 Sent partial transcription: {delta_text}")
                     
                     # Reset chunk count for next batch
@@ -299,10 +324,15 @@ async def websocket_transcribe(websocket: WebSocket):
                 
     except Exception as e:
         print(f"❌ WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         print("🔌 WebSocket disconnected")
         session.reset()
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass
 
 # ============================================================================
 # AI ENDPOINTS - Summarization, Quiz, Recommendations
