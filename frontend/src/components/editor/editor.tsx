@@ -76,7 +76,8 @@ export function Editor({ note }: EditorProps) {
     const [isGettingRecommendations, setIsGettingRecommendations] = useState(false);
     const [recommendations, setRecommendations] = useState<any[]>([]);
     const [showRecommendations, setShowRecommendations] = useState(false);
-    const lastInsertedTranscription = useRef("");
+    const [liveTranscription, setLiveTranscription] = useState("");
+    const currentParagraphRef = useRef<boolean>(false);
 
     const pendingSave = useRef(false);
 
@@ -167,23 +168,46 @@ export function Editor({ note }: EditorProps) {
         pendingSave.current = true;
     };
 
-    const handleTranscription = (text: string, _isComplete: boolean) => {
-        if (!editor) return;
+    const handleTranscription = (text: string, isComplete: boolean) => {
+        if (!editor || !text.trim()) return;
 
-        const trimmed = text.trim();
-        if (!trimmed) return;
+        console.log("🎯 handleTranscription called:", { text, isComplete });
 
-        // Avoid duplicate inserts when backend sends repeated partial/final payloads.
-        if (trimmed === lastInsertedTranscription.current) return;
+        try {
+            // Always insert the transcribed text immediately
+            const currentContent = editor.getHTML();
+            
+            // If editor is empty or has only placeholder, replace it
+            if (!currentContent || currentContent === "<p></p>" || currentContent.includes("Start typing")) {
+                editor
+                    .chain()
+                    .focus()
+                    .clearContent()
+                    .insertContent(`<p>${text}</p>`)
+                    .run();
+                console.log("✅ Inserted new paragraph:", text);
+            } else {
+                // Append to existing content
+                editor
+                    .chain()
+                    .focus("end")
+                    .insertContent(` ${text}`)
+                    .run();
+                console.log("✅ Appended to existing content:", text);
+            }
 
-        editor.commands.insertContentAt(editor.state.doc.content.size, {
-            type: "paragraph",
-            content: [{ type: "text", text: trimmed }],
-        });
-
-        lastInsertedTranscription.current = trimmed;
-        pendingSave.current = true;
-        setContentVersion((prev) => prev + 1);
+            // Mark for saving
+            pendingSave.current = true;
+            setContentVersion((prev) => prev + 1);
+            
+            // Auto-save after transcription
+            if (isComplete) {
+                console.log("💾 Triggering auto-save...");
+                setContentVersion((prev) => prev + 1);
+            }
+        } catch (error) {
+            console.error("❌ Error in handleTranscription:", error);
+        }
     };
 
     // Debounced Auto-save
