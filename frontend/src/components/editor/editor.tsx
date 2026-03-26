@@ -3,7 +3,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { updateNote } from "@/actions/note";
 import { summarizeText, generateQuiz, getRecommendations } from "@/actions/ai";
 import { saveQuizResult } from "@/actions/quiz";
@@ -64,6 +64,7 @@ export function Editor({ note }: EditorProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [lastSaved, setLastSaved] = useState<Date | null>(null);
     const [contentVersion, setContentVersion] = useState(0);
+    const [isEditorReady, setIsEditorReady] = useState(false);
 
     // AI States
     const [isSummarizing, setIsSummarizing] = useState(false);
@@ -99,6 +100,9 @@ export function Editor({ note }: EditorProps) {
         onUpdate: () => {
             pendingSave.current = true;
             setContentVersion((prev) => prev + 1);
+        },
+        onCreate: () => {
+            setIsEditorReady(true);
         }
     });
 
@@ -177,47 +181,28 @@ export function Editor({ note }: EditorProps) {
         pendingSave.current = true;
     };
 
-    const handleTranscription = (text: string, isComplete: boolean) => {
-        if (!editor || !text.trim()) return;
+    const handleTranscription = useCallback((text: string, isComplete: boolean) => {
+        if (!editor || !text.trim()) {
+            console.warn("handleTranscription: Editor not ready or text is empty.");
+            return;
+        }
 
-        console.log("🎯 handleTranscription called:", { text, isComplete });
+        console.log("🎯 handleTranscription (re-render proof) called with:", { text, isComplete });
 
         try {
-            // Always insert the transcribed text immediately
-            const currentContent = editor.getHTML();
-
-            // If editor is empty or has only placeholder, replace it
-            if (!currentContent || currentContent === "<p></p>" || currentContent.includes("Start typing")) {
-                editor
-                    .chain()
-                    .focus()
-                    .clearContent()
-                    .insertContent(`<p>${text}</p>`)
-                    .run();
-                console.log("✅ Inserted new paragraph:", text);
-            } else {
-                // Append to existing content
-                editor
-                    .chain()
-                    .focus("end")
-                    .insertContent(` ${text}`)
-                    .run();
-                console.log("✅ Appended to existing content:", text);
-            }
+            // Use a transaction to batch commands
+            editor.chain().focus("end").insertContent(` ${text}`).run();
+            console.log("✅ Text inserted into editor:", text);
 
             // Mark for saving
             pendingSave.current = true;
             setContentVersion((prev) => prev + 1);
+            console.log("💾 Marked for auto-save.");
 
-            // Auto-save after transcription
-            if (isComplete) {
-                console.log("💾 Triggering auto-save...");
-                setContentVersion((prev) => prev + 1);
-            }
         } catch (error) {
-            console.error("❌ Error in handleTranscription:", error);
+            console.error("❌ Error during editor transaction:", error);
         }
-    };
+    }, [editor]); // Dependency on `editor` ensures the latest instance is used
 
     // Debounced Auto-save
     useEffect(() => {
@@ -389,7 +374,11 @@ export function Editor({ note }: EditorProps) {
             </div>
 
             <div className="mt-8">
-                <Recorder onTranscription={handleTranscription} />
+                {isEditorReady ? (
+                    <Recorder onTranscription={handleTranscription} />
+                ) : (
+                    <div className="text-center p-4 text-slate-400">Loading recorder...</div>
+                )}
             </div>
 
             {/* Content Dialogs */}
