@@ -12,6 +12,8 @@ import random
 import tempfile
 import asyncio
 import json
+import re
+from urllib.parse import quote_plus
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -79,6 +81,11 @@ except LookupError:
     nltk.download("punkt")
 
 try:
+    nltk.data.find("tokenizers/punkt_tab")
+except LookupError:
+    nltk.download("punkt_tab")
+
+try:
     nltk.data.find("taggers/averaged_perceptron_tagger")
 except LookupError:
     nltk.download("averaged_perceptron_tagger")
@@ -106,6 +113,119 @@ class RecommendationItem(BaseModel):
 
 class RecommendationResponse(BaseModel):
     recommendations: List[RecommendationItem]
+
+
+def _get_gemini_model_name() -> str:
+    """Return a configurable, currently supported Gemini model name."""
+    return os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+
+
+def _summarize_with_fallback(text: str, sentences_count: int, language: str) -> str:
+    """Generate a summary without external LLM dependencies."""
+    if not text.strip():
+        return ""
+
+    try:
+        parser = PlaintextParser.from_string(text, Tokenizer(language))
+        stemmer = Stemmer(language)
+        summarizer = LsaSummarizer(stemmer)
+        summarizer.stop_words = get_stop_words(language)
+
+        summary = summarizer(parser.document, sentences_count)
+        result = " ".join([str(sentence) for sentence in summary]).strip()
+        if result:
+            return result
+    except Exception as fallback_error:
+        print(f"Sumy fallback error: {fallback_error}")
+
+    # Final resilience path: lightweight sentence slicing.
+    plain = re.sub(r"\s+", " ", text).strip()
+    pieces = [p.strip() for p in re.split(r"(?<=[.!?])\s+", plain) if p.strip()]
+    if pieces:
+        return " ".join(pieces[: max(1, sentences_count)])
+    return plain[:500]
+
+
+def _quiz_with_fallback(text: str, language: str) -> List[Dict[str, str]]:
+    """Generate quiz content without external LLM dependencies."""
+    quiz: List[Dict[str, str]] = []
+
+    try:
+        parser = PlaintextParser.from_string(text, Tokenizer(language))
+        stemmer = Stemmer(language)
+        summarizer = LsaSummarizer(stemmer)
+        summarizer.stop_words = get_stop_words(language)
+
+        sentences = summarizer(parser.document, 10)
+        for sentence in sentences:
+            str_sent = str(sentence)
+            tokens = nltk.word_tokenize(str_sent)
+            tagged = nltk.pos_tag(tokens)
+            nouns = [word for word, tag in tagged if tag.startswith("NN") and len(word) > 3]
+
+            if nouns:
+                answer = random.choice(nouns)
+                question = str_sent.replace(answer, "______", 1)
+                if question != str_sent:
+                    quiz.append({"question": question, "answer": answer})
+                if len(quiz) >= 5:
+                    break
+    except Exception as fallback_error:
+        print(f"Quiz fallback (nltk/sumy) error: {fallback_error}")
+
+    if len(quiz) < 5:
+        plain = re.sub(r"\s+", " ", text).strip()
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", plain) if s.strip()]
+        for sentence in sentences:
+            words = re.findall(r"\b[A-Za-z][A-Za-z0-9'-]{3,}\b", sentence)
+            if not words:
+                continue
+            answer = words[0]
+            question = re.sub(rf"\b{re.escape(answer)}\b", "______", sentence, count=1)
+            if question != sentence:
+                quiz.append({"question": question, "answer": answer})
+            if len(quiz) >= 5:
+                break
+
+    if not quiz:
+        quiz = [{
+            "question": "What is the most important concept in this note?",
+            "answer": "Main idea of the note",
+        }]
+
+    return quiz[:5]
+
+
+def _recommendations_with_fallback(text: str) -> List[Dict[str, str]]:
+    """Generate search-friendly recommendations without external LLM dependencies."""
+    terms = re.findall(r"\b[A-Za-z][A-Za-z0-9'-]{3,}\b", text.lower())
+    seen = set()
+    keywords = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            keywords.append(term)
+        if len(keywords) >= 6:
+            break
+
+    query = quote_plus(" ".join(keywords) if keywords else "study topic")
+    return [
+        {
+            "title": "YouTube Learning Playlist",
+            "url": f"https://www.youtube.com/results?search_query={query}",
+            "type": "youtube",
+        },
+        {
+            "title": "Google Scholar Articles",
+            "url": f"https://scholar.google.com/scholar?q={query}",
+            "type": "article",
+        },
+        {
+            "title": "Khan Academy Related Lessons",
+            "url": f"https://www.khanacademy.org/search?page_search_query={query}",
+            "type": "article",
+        },
+    ]
 
 # ============================================================================
 # LIVE TRANSCRIPTION - WebSocket with WebM Support
@@ -348,37 +468,28 @@ async def summarize_note(request: NoteRequest):
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
             # Use LangChain + Gemini
-            llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=api_key)
+            llm = ChatGoogleGenerativeAI(
+                model=_get_gemini_model_name(),
+                google_api_key=api_key,
+            )
             prompt = PromptTemplate.from_template(
                 "Summarize the following study notes in approximately {count} clear and concise sentences. "
                 "Focus on the main concepts and key takeaways.\n\nNotes:\n{text}\n\nSummary:"
             )
             chain = prompt | llm
             response = await chain.ainvoke({"text": request.text, "count": request.sentences_count})
-            return {"summary": response.content}
-        else:
-            # Fallback to Sumy
-            parser = PlaintextParser.from_string(request.text, Tokenizer(request.language))
-            stemmer = Stemmer(request.language)
-            summarizer = LsaSummarizer(stemmer)
-            summarizer.stop_words = get_stop_words(request.language)
+            summary_text = getattr(response, "content", "")
+            if summary_text and str(summary_text).strip():
+                return {"summary": str(summary_text).strip()}
 
-            summary = summarizer(parser.document, request.sentences_count)
-            result = " ".join([str(sentence) for sentence in summary])
-            return {"summary": result}
+        # Fallback to local summarization when no API key or empty LLM response.
+        result = _summarize_with_fallback(request.text, request.sentences_count, request.language)
+        return {"summary": result}
             
     except Exception as e:
         print(f"Summarization error: {e}")
-        # Always allow fallback if LLM fails
-        try:
-            parser = PlaintextParser.from_string(request.text, Tokenizer(request.language))
-            stemmer = Stemmer(request.language)
-            summarizer = LsaSummarizer(stemmer)
-            summarizer.stop_words = get_stop_words(request.language)
-            summary = summarizer(parser.document, request.sentences_count)
-            return {"summary": " ".join([str(sentence) for sentence in summary])}
-        except:
-            raise HTTPException(status_code=500, detail=str(e))
+        result = _summarize_with_fallback(request.text, request.sentences_count, request.language)
+        return {"summary": result}
 
 
 @app.post("/quiz")
@@ -390,85 +501,76 @@ async def generate_quiz(request: NoteRequest):
 
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
-            # Use LangChain + Gemini for better quiz generation
-            llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=api_key)
-            parser = JsonOutputParser(pydantic_object=QuizResponse)
-            
-            prompt = PromptTemplate.from_template(
-                "Generate a quiz based on the following study notes. "
-                "Provide exactly 5 multiple choice or fill-in-the-blank questions. "
-                "Format the output as a JSON object with a 'quiz' field containing a list of objects with 'question' and 'answer'.\n\n"
-                "Notes:\n{text}\n\n{format_instructions}"
-            )
-            
-            chain = prompt | llm | parser
-            response = await chain.ainvoke({
-                "text": request.text, 
-                "format_instructions": parser.get_format_instructions()
-            })
-            return response
-        else:
-            # Fallback to NLTK-based simple quiz logic
-            parser = PlaintextParser.from_string(request.text, Tokenizer(request.language))
-            stemmer = Stemmer(request.language)
-            summarizer = LsaSummarizer(stemmer)
-            summarizer.stop_words = get_stop_words(request.language)
+            try:
+                # Use LangChain + Gemini for better quiz generation
+                llm = ChatGoogleGenerativeAI(
+                    model=_get_gemini_model_name(),
+                    google_api_key=api_key,
+                )
+                parser = JsonOutputParser(pydantic_object=QuizResponse)
+                
+                prompt = PromptTemplate.from_template(
+                    "Generate a quiz based on the following study notes. "
+                    "Provide exactly 5 multiple choice or fill-in-the-blank questions. "
+                    "Format the output as a JSON object with a 'quiz' field containing a list of objects with 'question' and 'answer'.\n\n"
+                    "Notes:\n{text}\n\n{format_instructions}"
+                )
+                
+                chain = prompt | llm | parser
+                response = await chain.ainvoke({
+                    "text": request.text,
+                    "format_instructions": parser.get_format_instructions(),
+                })
+                if isinstance(response, dict) and response.get("quiz"):
+                    return response
+            except Exception as llm_error:
+                print(f"Quiz LLM path failed, using fallback: {llm_error}")
 
-            sentences = summarizer(parser.document, 10)
-            quiz = []
-            for sentence in sentences:
-                str_sent = str(sentence)
-                tokens = nltk.word_tokenize(str_sent)
-                tagged = nltk.pos_tag(tokens)
-                nouns = [word for word, tag in tagged if tag.startswith("NN") and len(word) > 3]
-
-                if nouns:
-                    answer = random.choice(nouns)
-                    question = str_sent.replace(answer, "______")
-                    quiz.append({"question": question, "answer": answer})
-                    if len(quiz) >= 5:
-                        break
-
-            return {"quiz": quiz}
+        fallback_quiz = _quiz_with_fallback(request.text, request.language)
+        return {"quiz": fallback_quiz}
             
     except Exception as e:
         print(f"Quiz error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"quiz": _quiz_with_fallback(request.text, request.language)}
 
 
 @app.post("/recommendations")
 async def get_recommendations(request: NoteRequest):
     """Get resource recommendations using LangChain/Gemini"""
     try:
+        if not request.text.strip():
+            return {"recommendations": []}
+
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
-            llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=api_key)
-            parser = JsonOutputParser(pydantic_object=RecommendationResponse)
-            
-            prompt = PromptTemplate.from_template(
-                "Based on the following study notes, suggest 3-5 high-quality external resources "
-                "(like academic articles, YouTube videos, or books) that would help the student "
-                "understand the topic better. Provide titles, direct search-friendly URLs, and the resource type.\n\n"
-                "Notes:\n{text}\n\n{format_instructions}"
-            )
-            
-            chain = prompt | llm | parser
-            response = await chain.ainvoke({
-                "text": request.text, 
-                "format_instructions": parser.get_format_instructions()
-            })
-            return response
-        else:
-            # Simple static fallback for demo
-            return {
-                "recommendations": [
-                    {"title": "Khan Academy - Topic Deep Dive", "url": "https://www.khanacademy.org", "type": "article"},
-                    {"title": "MIT OpenCourseWare", "url": "https://ocw.mit.edu", "type": "article"},
-                ]
-            }
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model=_get_gemini_model_name(),
+                    google_api_key=api_key,
+                )
+                parser = JsonOutputParser(pydantic_object=RecommendationResponse)
+                
+                prompt = PromptTemplate.from_template(
+                    "Based on the following study notes, suggest 3-5 high-quality external resources "
+                    "(like academic articles, YouTube videos, or books) that would help the student "
+                    "understand the topic better. Provide titles, direct search-friendly URLs, and the resource type.\n\n"
+                    "Notes:\n{text}\n\n{format_instructions}"
+                )
+                
+                chain = prompt | llm | parser
+                response = await chain.ainvoke({
+                    "text": request.text,
+                    "format_instructions": parser.get_format_instructions(),
+                })
+                if isinstance(response, dict) and response.get("recommendations"):
+                    return response
+            except Exception as llm_error:
+                print(f"Recommendation LLM path failed, using fallback: {llm_error}")
+
+        return {"recommendations": _recommendations_with_fallback(request.text)}
     except Exception as e:
         print(f"Recommendation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"recommendations": _recommendations_with_fallback(request.text)}
 
 # ============================================================================
 # FILE-BASED TRANSCRIPTION - Standard Whisper (separate model)
